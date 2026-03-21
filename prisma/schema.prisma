@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workflow {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  graphJson Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  runs      WorkflowRun[]
+
+  @@index([userId, updatedAt])
+}
+
+model WebhookEvent {
+  id             String   @id @default(cuid())
+  provider       String
+  eventType      String
+  signatureValid Boolean
+  payload        Json
+  createdAt      DateTime @default(now())
+}
+
+model WorkflowRun {
+  id         String      @id @default(cuid())
+  workflowId String?
+  userId     String
+  mode       String
+  status     String
+  durationMs Int?
+  startedAt  DateTime    @default(now())
+  finishedAt DateTime?
+  graphJson  Json
+  workflow   Workflow?   @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  nodeRuns   NodeRun[]
+
+  @@index([userId, startedAt(sort: Desc)])
+  @@index([workflowId, startedAt(sort: Desc)])
+}
+
+model NodeRun {
+  id           String      @id @default(cuid())
+  workflowRunId String
+  nodeId       String
+  nodeType     String
+  status       String
+  startedAt    DateTime    @default(now())
+  finishedAt   DateTime?
+  durationMs   Int?
+  inputJson    Json?
+  outputJson   Json?
+  error        String?
+  workflowRun  WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  @@index([workflowRunId, startedAt])
+}
