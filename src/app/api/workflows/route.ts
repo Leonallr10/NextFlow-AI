@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { workflowSchema } from "@/lib/workflow-schema";
+import { serverLog } from "@/lib/server-log";
 
 export async function GET() {
   const { userId } = await auth();
@@ -52,6 +53,13 @@ export async function POST(request: Request) {
   }
 
   if (!process.env.DATABASE_URL) {
+    serverLog("api/workflows POST", {
+      userId,
+      stored: false,
+      name: parsed.data.name,
+      nodeCount: parsed.data.nodes.length,
+      edgeCount: parsed.data.edges.length,
+    });
     return NextResponse.json({
       ok: true,
       workflow: parsed.data,
@@ -79,5 +87,14 @@ export async function POST(request: Request) {
     });
   }
 
+  const wf = created as { id?: string };
+  serverLog("api/workflows POST", {
+    userId,
+    stored: true,
+    workflowId: wf.id ?? null,
+    name: parsed.data.name,
+    nodeCount: parsed.data.nodes.length,
+    edgeCount: parsed.data.edges.length,
+  });
   return NextResponse.json({ ok: true, workflow: created });
 }

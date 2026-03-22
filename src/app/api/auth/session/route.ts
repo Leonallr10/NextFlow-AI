@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { serverLog } from "@/lib/server-log";
 
 export async function GET() {
   const { userId, sessionId } = await auth();
 
   if (!userId) {
+    serverLog("api/auth/session", { event: "unauthenticated" });
     return NextResponse.json(
       {
         ok: false,
@@ -15,6 +17,12 @@ export async function GET() {
   }
 
   const user = await currentUser();
+  serverLog("api/auth/session", {
+    event: "authenticated",
+    userId,
+    sessionId: sessionId ?? null,
+    email: user?.emailAddresses?.[0]?.emailAddress ?? null,
+  });
 
   return NextResponse.json({
     ok: true,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   addEdge,
   applyEdgeChanges,
@@ -23,6 +24,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useFlowStore } from "@/lib/flow-store";
 import type { WorkflowInput } from "@/lib/workflow-schema";
+import { DEFAULT_GEMINI_MODEL } from "@/lib/gemini-defaults";
+import { LlmOutputMarkdown } from "@/components/llm-output";
+import { SAMPLE_WORKFLOW_NAME } from "@/lib/sample-workflow";
+import { notifyDashboardStatsRefresh } from "@/components/dashboard-stats-bar";
 
 const nodeTemplates = [
   { label: "Text Node", type: "text" },
@@ -42,15 +47,38 @@ function BaseNode({
   id,
   data,
   children,
+  className,
 }: {
   id: string;
   data: EditorNodeData;
   children?: React.ReactNode;
+  /** Extra classes on the card (e.g. wider LLM node). */
+  className?: string;
 }) {
+  const removeNode = useFlowStore((s) => s.removeNode);
   return (
-    <div className="min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl">
-      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{id}</p>
-      <p className="mt-1 text-sm font-medium">{data.label}</p>
+    <div
+      className={`min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl ${className ?? ""}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{id}</p>
+          <p className="mt-1 text-sm font-medium">{data.label}</p>
+        </div>
+        <button
+          type="button"
+          title="Delete node"
+          aria-label={`Delete node ${id}`}
+          className="shrink-0 rounded-md border border-zinc-600 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 hover:border-red-500 hover:bg-red-950/80 hover:text-red-200"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            removeNode(id);
+          }}
+        >
+          Delete
+        </button>
+      </div>
       {children}
     </div>
   );
@@ -91,18 +119,30 @@ function UploadNode({ id, data, accept, inputHandleId }: NodeProps<Node<EditorNo
 function LlmNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data}>
+    <BaseNode id={id} data={data} className="min-w-[300px] max-w-[min(100vw,26rem)]">
       <Handle id="system_prompt" type="target" position={Position.Left} style={{ top: 30 }} />
       <Handle id="user_message" type="target" position={Position.Left} style={{ top: 58 }} />
       <Handle id="images" type="target" position={Position.Left} style={{ top: 86 }} />
       <Handle id="output" type="source" position={Position.Right} />
-      <input
-        className="mt-2 w-full rounded bg-zinc-800 p-2 text-xs"
-        value={String(data.model ?? "gemini-2.0-flash")}
-        onChange={(event) => updateNodeData(id, { model: event.target.value })}
-      />
-      <div className="mt-2 rounded bg-zinc-800 p-2 text-xs text-zinc-300">
-        {String(data.output ?? "Run workflow to see output inline")}
+      <label className="mt-2 block text-left">
+        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Model
+        </span>
+        <input
+          className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-2.5 py-1.5 text-left text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+          autoComplete="off"
+          spellCheck={false}
+          value={String(data.model ?? DEFAULT_GEMINI_MODEL)}
+          onChange={(event) => updateNodeData(id, { model: event.target.value })}
+        />
+      </label>
+      <div className="mt-3 text-left">
+        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Output
+        </span>
+        <div className="max-h-72 min-h-[3rem] overflow-x-auto overflow-y-auto rounded-md border border-zinc-600 bg-zinc-950/90 px-3 py-2.5 shadow-inner">
+          <LlmOutputMarkdown text={String(data.output ?? "")} />
+        </div>
       </div>
     </BaseNode>
   );
@@ -158,15 +198,37 @@ const nodeTypes = {
 };
 
 export function FlowEditor() {
-  const { nodes, edges, setNodes, setEdges, addNode, selectedNodeIds, setSelectedNodeIds } = useFlowStore();
+  const {
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    addNode,
+    selectedNodeIds,
+    setSelectedNodeIds,
+    updateNodeData,
+    loadSampleWorkflow,
+  } = useFlowStore();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node, Edge> | null>(null);
   const [runs, setRuns] = useState<Array<Record<string, unknown>>>([]);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const router = useRouter();
   const nodeCountRef = useRef(0);
   /** Avoid infinite loops: React Flow can fire onSelectionChange every frame with a new array reference. */
   const selectionKeyRef = useRef<string>("");
 
   const onNodesChange = (changes: NodeChange[]) => {
-    setNodes(applyNodeChanges(changes, nodes));
+    const nextNodes = applyNodeChanges(changes, nodes);
+    const ids = new Set(nextNodes.map((n) => n.id));
+    const nextEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+    setNodes(nextNodes);
+    if (nextEdges.length !== edges.length) {
+      setEdges(nextEdges);
+    }
   };
 
   const onEdgesChange = (changes: EdgeChange[]) => {
@@ -207,10 +269,15 @@ export function FlowEditor() {
 
   const addTemplateNode = (label: string, type: string) => {
     nodeCountRef.current += 1;
+    const data: Record<string, unknown> = { label };
+    if (type === "llm") {
+      data.model = DEFAULT_GEMINI_MODEL;
+      data.output = "";
+    }
     const newNode: Node = {
       id: `${type}-${nodeCountRef.current}`,
       position: { x: 200 + (nodeCountRef.current % 3) * 240, y: 120 + (nodeCountRef.current % 4) * 120 },
-      data: { label },
+      data,
       type,
     };
     addNode(newNode);
@@ -219,7 +286,7 @@ export function FlowEditor() {
   const totalNodes = useMemo(() => nodes.length, [nodes.length]);
 
   const toWorkflowPayload = (): WorkflowInput => ({
-      name: "Product Marketing Kit Generator",
+      name: SAMPLE_WORKFLOW_NAME,
       nodes: nodes.map((node) => ({
         id: node.id,
         type: (node.type as WorkflowInput["nodes"][number]["type"]) ?? "text",
@@ -237,28 +304,135 @@ export function FlowEditor() {
     });
 
   const saveWorkflow = async () => {
+    setSaveMessage(null);
+    setSaveError(null);
     const payload = toWorkflowPayload();
-
-    await fetch("/api/workflows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    console.log("[NextFlow] Save workflow → POST /api/workflows", {
+      name: payload.name,
+      nodeCount: payload.nodes.length,
+      edgeCount: payload.edges.length,
+      nodeTypes: payload.nodes.map((n) => n.type),
     });
+
+    setIsSaving(true);
+    let res: Response;
+    try {
+      res = await fetch("/api/workflows", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      setIsSaving(false);
+      setSaveError(e instanceof Error ? e.message : "Network error while saving.");
+      return;
+    }
+    setIsSaving(false);
+
+    const json = (await res.json()) as { ok?: boolean; error?: string; warning?: string; workflow?: { id?: string } };
+    console.log("[NextFlow] Save workflow ← response", { ok: res.ok, status: res.status, body: json });
+
+    if (!res.ok) {
+      setSaveError(typeof json.error === "string" ? json.error : `Save failed (${res.status})`);
+      return;
+    }
+
+    const persistedToDb = !json.warning;
+    setSaveMessage(
+      persistedToDb
+        ? "Workflow saved to your account."
+        : "Workflow validated (set DATABASE_URL to persist to the database).",
+    );
+    notifyDashboardStatsRefresh();
+    router.refresh();
+
+    window.setTimeout(() => setSaveMessage(null), 6000);
   };
 
   const runWorkflow = async (mode: "full" | "selected" | "single") => {
-    const runResponse = await fetch("/api/workflows/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode,
-        nodeIds: mode === "full" ? undefined : selectedNodeIds,
-        workflow: toWorkflowPayload(),
-      }),
+    setRunError(null);
+    if (mode !== "full" && selectedNodeIds.length === 0) {
+      setRunError("Select one or more nodes on the canvas first (Run Selected / Run Single).");
+      return;
+    }
+    if (mode === "single" && selectedNodeIds.length !== 1) {
+      setRunError("Run Single: select exactly one node on the canvas, then click again.");
+      return;
+    }
+
+    const body = {
+      mode,
+      nodeIds: mode === "full" ? undefined : selectedNodeIds,
+      workflow: toWorkflowPayload(),
+    };
+    console.log("[NextFlow] Run workflow → POST /api/workflows/run", {
+      mode,
+      selectedNodeIds: body.nodeIds,
+      workflowName: body.workflow.name,
+      nodeCount: body.workflow.nodes.length,
     });
-    const runJson = (await runResponse.json()) as { run?: Record<string, unknown> };
+
+    setIsRunning(true);
+    let runResponse: Response;
+    try {
+      runResponse = await fetch("/api/workflows/run", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "Network error while running workflow.");
+      return;
+    } finally {
+      setIsRunning(false);
+    }
+
+    const runJson = (await runResponse.json()) as {
+      ok?: boolean;
+      error?: string;
+      run?: Record<string, unknown>;
+      nodeOutputs?: Record<string, unknown>;
+    };
+    console.log("[NextFlow] Run workflow ← response", {
+      ok: runResponse.ok,
+      status: runResponse.status,
+      run: runJson.run,
+      nodeOutputs: runJson.nodeOutputs,
+    });
+
+    if (!runResponse.ok) {
+      setRunError(typeof runJson.error === "string" ? runJson.error : `Run failed (${runResponse.status})`);
+      return;
+    }
+
+    if (runJson.nodeOutputs) {
+      const storeNodes = useFlowStore.getState().nodes;
+      for (const [nodeId, out] of Object.entries(runJson.nodeOutputs)) {
+        const n = storeNodes.find((x) => x.id === nodeId);
+        if (n?.type === "llm" && typeof out === "string") {
+          updateNodeData(nodeId, { output: out });
+        }
+      }
+    }
+
     if (runJson.run) {
       setRuns((current) => [runJson.run as Record<string, unknown>, ...current].slice(0, 20));
+    }
+
+    const runRecord = runJson.run as
+      | { status?: string; nodeRuns?: Array<{ status?: string; error?: string; nodeId?: string }> }
+      | undefined;
+    if (runRecord?.status === "failed" && Array.isArray(runRecord.nodeRuns)) {
+      const failed = runRecord.nodeRuns.find((nr) => nr.status === "failed");
+      if (failed?.error) {
+        setRunError(
+          failed.nodeId
+            ? `${failed.nodeId}: ${failed.error}`
+            : failed.error,
+        );
+      }
     }
   };
 
@@ -306,8 +480,8 @@ export function FlowEditor() {
   );
 
   return (
-    <div className="grid min-h-[85vh] grid-cols-[280px_1fr_320px] gap-3">
-      <aside className="rounded-xl border border-zinc-200 bg-white p-4">
+    <div className="grid min-h-[85vh] grid-cols-[280px_1fr_320px] gap-3 text-zinc-900">
+      <aside className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-900 [color-scheme:light]">
         <h2 className="text-lg font-semibold">NextFlow Nodes</h2>
         <p className="mt-1 text-sm text-zinc-500">Quick access</p>
 
@@ -330,30 +504,64 @@ export function FlowEditor() {
           <p>Nodes: {totalNodes}</p>
           <p>Edges: {edges.length}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => loadSampleWorkflow()}
+          className="mt-3 w-full rounded-lg border border-dashed border-zinc-400 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-100"
+        >
+          Load sample workflow (7 nodes)
+        </button>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={saveWorkflow}
-            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white"
+            disabled={isSaving}
+            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Save
+            {isSaving ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
             onClick={() => runWorkflow("full")}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            disabled={isRunning}
+            className="rounded-lg bg-zinc-800 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Run Full
+            {isRunning ? "Running…" : "Run Full"}
           </button>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => runWorkflow("selected")} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs">
+          <button
+            type="button"
+            onClick={() => runWorkflow("selected")}
+            disabled={isRunning}
+            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
             Run Selected
           </button>
-          <button type="button" onClick={() => runWorkflow("single")} className="rounded-lg border border-zinc-300 px-3 py-2 text-xs">
+          <button
+            type="button"
+            onClick={() => runWorkflow("single")}
+            disabled={isRunning}
+            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
             Run Single
           </button>
         </div>
+        {saveMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-900" role="status">
+            {saveMessage}
+          </p>
+        ) : null}
+        {saveError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs text-red-800" role="alert">
+            {saveError}
+          </p>
+        ) : null}
+        {runError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-2 py-2 text-xs text-red-800" role="alert">
+            {runError}
+          </p>
+        ) : null}
       </aside>
 
       <section
@@ -378,7 +586,7 @@ export function FlowEditor() {
           <Background />
         </ReactFlow>
       </section>
-      <aside className="rounded-xl border border-zinc-200 bg-white p-4">
+      <aside className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-900 [color-scheme:light]">
         <h3 className="text-base font-semibold">Workflow History</h3>
         <p className="mt-1 text-xs text-zinc-500">Recent full / selected / single runs</p>
         <div className="mt-3 space-y-2">

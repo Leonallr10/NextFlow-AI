@@ -1,9 +1,11 @@
 import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
+import { AuthPageLogger } from "@/components/auth-page-logger";
 
 export default function SignUpPage() {
   return (
     <div className="min-h-screen bg-zinc-100 p-4 md:p-8">
+      <AuthPageLogger page="sign-up" />
       <div className="mx-auto grid w-full max-w-6xl gap-6 rounded-2xl border border-zinc-200 bg-white p-4 md:grid-cols-2 md:p-8">
         <section className="rounded-xl bg-white p-4 md:p-6">
           <div className="mb-4">
@@ -13,7 +15,7 @@ export default function SignUpPage() {
               Start building node-based AI workflows with secure auth, background jobs, and media processing.
             </p>
           </div>
-          <SignUp fallbackRedirectUrl="/dashboard" signInUrl="/sign-in" />
+          <SignUp forceRedirectUrl="/dashboard" fallbackRedirectUrl="/dashboard" signInUrl="/sign-in" />
         </section>
         <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-6">
           <h2 className="text-lg font-semibold">What you get</h2>

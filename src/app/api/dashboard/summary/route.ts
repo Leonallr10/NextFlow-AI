@@ -24,7 +24,7 @@ export async function GET() {
   }
 
   const [workflows, webhookEvents] = await Promise.all([
-    prisma.workflow.count(),
+    prisma.workflow.count({ where: { userId } }),
     prisma.webhookEvent.count(),
   ]);
 

@@ -1,9 +1,11 @@
 import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
+import { AuthPageLogger } from "@/components/auth-page-logger";
 
 export default function SignInPage() {
   return (
     <div className="min-h-screen bg-zinc-100 p-4 md:p-8">
+      <AuthPageLogger page="sign-in" />
       <div className="mx-auto grid w-full max-w-6xl gap-6 rounded-2xl border border-zinc-200 bg-white p-4 md:grid-cols-2 md:p-8">
         <section className="rounded-xl bg-zinc-900 p-6 text-zinc-100 md:p-8">
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">NextFlow</p>
@@ -21,7 +23,7 @@ export default function SignInPage() {
           </Link>
         </section>
         <section className="flex items-center justify-center rounded-xl bg-zinc-50 p-4">
-          <SignIn fallbackRedirectUrl="/dashboard" signUpUrl="/sign-up" />
+          <SignIn forceRedirectUrl="/dashboard" fallbackRedirectUrl="/dashboard" signUpUrl="/sign-up" />
         </section>
       </div>
     </div>

@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { workflowSchema } from "@/lib/workflow-schema";
+import { workflowSchema, type WorkflowInput } from "@/lib/workflow-schema";
+import { serverLog } from "@/lib/server-log";
+import { resolveLlmInputs, valueToImageUrl } from "@/lib/resolve-llm-inputs";
+import { executeLlmViaTriggerOrFallback } from "@/lib/trigger-llm";
 
 type RunMode = "full" | "selected" | "single";
+type WorkflowNode = WorkflowInput["nodes"][number];
 
 function collectUpstream(nodeId: string, edges: Array<{ source: string; target: string }>, keep: Set<string>) {
   if (keep.has(nodeId)) return;
@@ -13,6 +17,55 @@ function collectUpstream(nodeId: string, edges: Array<{ source: string; target: 
     collectUpstream(edge.source, edges, keep);
   }
 }
+
+/** Resolve upstream output for a node (same idea as `resolve-llm-inputs` / static fallbacks). */
+function getOutputOrStaticUpstream(
+  sourceId: string,
+  workflow: WorkflowInput,
+  outputsByNodeId: Map<string, unknown>,
+): unknown {
+  if (outputsByNodeId.has(sourceId)) {
+    return outputsByNodeId.get(sourceId);
+  }
+  const n = workflow.nodes.find((item) => item.id === sourceId);
+  if (!n) return undefined;
+  const nd = (n.data ?? {}) as Record<string, unknown>;
+  switch (n.type) {
+    case "text":
+      return String(nd.text ?? "");
+    case "upload_image":
+    case "upload_video":
+      return String(nd.url ?? "");
+    default:
+      return undefined;
+  }
+}
+
+function getUpstreamForTarget(
+  workflow: WorkflowInput,
+  targetNodeId: string,
+  outputsByNodeId: Map<string, unknown>,
+  preferredHandle?: string,
+): unknown {
+  const incoming = workflow.edges.filter((e) => e.target === targetNodeId);
+  const ordered =
+    preferredHandle != null
+      ? [...incoming].sort((a, b) => {
+          const ap = a.targetHandle === preferredHandle ? 0 : 1;
+          const bp = b.targetHandle === preferredHandle ? 0 : 1;
+          return ap - bp;
+        })
+      : incoming;
+  for (const edge of ordered) {
+    const v = getOutputOrStaticUpstream(edge.source, workflow, outputsByNodeId);
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
+/** Stub extract: real FFmpeg/Transloadit not wired yet — must be a fetchable image URL for Gemini. */
+const DEFAULT_STUB_FRAME_IMAGE_URL =
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg";
 
 function levelsForExecution(
   nodeIds: string[],
@@ -47,21 +100,89 @@ function levelsForExecution(
   return levels;
 }
 
-async function executeNode(node: { id: string; type: string; data?: Record<string, unknown> }) {
+async function executeNode(
+  node: WorkflowNode,
+  workflow: WorkflowInput,
+  outputsByNodeId: Map<string, unknown>,
+): Promise<{ output: unknown; durationMs: number; input?: unknown }> {
   const startedAt = Date.now();
-  if (node.type === "llm") {
-    const output = `Generated response for ${node.id}`;
-    return { output, durationMs: Date.now() - startedAt };
+  const d = (node.data ?? {}) as Record<string, unknown>;
+
+  switch (node.type) {
+    case "text":
+      return {
+        output: String(d.text ?? ""),
+        durationMs: Date.now() - startedAt,
+        input: { text: d.text ?? "" },
+      };
+    case "upload_image":
+    case "upload_video":
+      return {
+        output: String(d.url ?? ""),
+        durationMs: Date.now() - startedAt,
+        input: { url: d.url ?? "" },
+      };
+    case "crop_image": {
+      const raw = getUpstreamForTarget(workflow, node.id, outputsByNodeId, "image_url");
+      let imageUrl = valueToImageUrl(raw);
+      if (!imageUrl) {
+        const manual = String(d.imageUrl ?? "").trim();
+        if (/^https?:\/\//i.test(manual)) imageUrl = manual;
+      }
+      if (!imageUrl) {
+        throw new Error(
+          "Crop node: connect an Upload Image (or upstream image) or set a valid https image URL in node data.",
+        );
+      }
+      // Stub: pass-through image URL (real crop would call Transloadit / sharp here).
+      return {
+        output: { imageUrl },
+        durationMs: Date.now() - startedAt,
+        input: { ...d, resolvedImageUrl: imageUrl },
+      };
+    }
+    case "extract_frame": {
+      const raw = getUpstreamForTarget(workflow, node.id, outputsByNodeId, "video_url");
+      const videoUrl =
+        typeof raw === "string" && raw.trim()
+          ? raw.trim()
+          : String((d as { videoUrl?: string }).videoUrl ?? d.url ?? "").trim();
+      const stubFrameUrl =
+        process.env.NEXTFLOW_STUB_FRAME_IMAGE_URL?.trim() || DEFAULT_STUB_FRAME_IMAGE_URL;
+      return {
+        output: { imageUrl: stubFrameUrl },
+        durationMs: Date.now() - startedAt,
+        input: { ...d, resolvedVideoUrl: videoUrl || undefined, stubNote: "frame extraction stub" },
+      };
+    }
+    case "llm": {
+      const resolved = resolveLlmInputs(workflow, node.id, outputsByNodeId);
+      if (!resolved.userMessage.trim()) {
+        throw new Error(
+          'LLM node requires a non-empty user_message: connect a Text node to the "user_message" handle.',
+        );
+      }
+      const { text } = await executeLlmViaTriggerOrFallback({
+        model: resolved.model,
+        systemInstruction: resolved.systemInstruction,
+        userMessage: resolved.userMessage,
+        imageUrls: resolved.imageUrls,
+      });
+      return {
+        output: text,
+        durationMs: Date.now() - startedAt,
+        input: {
+          model: resolved.model,
+          systemInstruction: resolved.systemInstruction,
+          userMessage: resolved.userMessage,
+          imageUrls: resolved.imageUrls,
+          resolvedEdges: resolved.resolvedEdges,
+        },
+      };
+    }
+    default:
+      return { output: node.data ?? null, durationMs: Date.now() - startedAt, input: node.data };
   }
-  if (node.type === "crop_image") {
-    const output = { imageUrl: String(node.data?.imageUrl ?? "https://example.com/cropped.jpg") };
-    return { output, durationMs: Date.now() - startedAt };
-  }
-  if (node.type === "extract_frame") {
-    const output = { imageUrl: String(node.data?.imageUrl ?? "https://example.com/frame.jpg") };
-    return { output, durationMs: Date.now() - startedAt };
-  }
-  return { output: node.data ?? null, durationMs: Date.now() - startedAt };
 }
 
 export async function POST(request: Request) {
@@ -115,12 +236,23 @@ export async function POST(request: Request) {
     runNodeIds = Array.from(include);
   }
 
+  serverLog("api/workflows/run POST", {
+    userId,
+    mode,
+    workflowName: workflow.name,
+    nodesInGraph: workflow.nodes.length,
+    edgesInGraph: workflow.edges.length,
+    nodesToExecute: runNodeIds.length,
+  });
+
   const startedAt = Date.now();
+  const outputsByNodeId = new Map<string, unknown>();
   const levels = levelsForExecution(
     runNodeIds,
     workflow.edges.map((edge) => ({ source: edge.source, target: edge.target })),
   );
   const nodeResults: Array<Record<string, unknown>> = [];
+
   for (const level of levels) {
     const levelResults = await Promise.all(
       level.map(async (nodeId) => {
@@ -130,7 +262,8 @@ export async function POST(request: Request) {
         }
         const localStartedAt = Date.now();
         try {
-          const result = await executeNode(node);
+          const result = await executeNode(node, workflow, outputsByNodeId);
+          outputsByNodeId.set(nodeId, result.output);
           return {
             nodeId,
             nodeType: node.type,
@@ -138,7 +271,7 @@ export async function POST(request: Request) {
             startedAt: new Date(localStartedAt).toISOString(),
             finishedAt: new Date().toISOString(),
             durationMs: result.durationMs,
-            input: node.data ?? {},
+            input: result.input ?? node.data ?? {},
             output: result.output,
           };
         } catch (error) {
@@ -156,7 +289,7 @@ export async function POST(request: Request) {
         }
       }),
     );
-    nodeResults.push(...levelResults.filter(Boolean) as Array<Record<string, unknown>>);
+    nodeResults.push(...(levelResults.filter(Boolean) as Array<Record<string, unknown>>));
   }
 
   const durationMs = Date.now() - startedAt;
@@ -202,16 +335,35 @@ export async function POST(request: Request) {
     }
   }
 
+  const runId =
+    persistedRun && typeof persistedRun === "object" && "id" in persistedRun
+      ? String(persistedRun.id)
+      : null;
+  serverLog("api/workflows/run complete", {
+    userId,
+    mode,
+    status,
+    durationMs,
+    nodeRunCount: nodeResults.length,
+    persistedRunId: runId,
+    dbPersisted: Boolean(persistedRun),
+  });
+
+  const nodeOutputs = Object.fromEntries(outputsByNodeId);
+
   return NextResponse.json({
     ok: true,
-    run: persistedRun ?? {
-      id: `local-${Date.now()}`,
-      mode,
-      status,
-      durationMs,
-      nodeRuns: nodeResults,
-      startedAt: new Date(startedAt).toISOString(),
-      finishedAt: new Date().toISOString(),
-    },
+    run:
+      persistedRun ??
+      ({
+        id: `local-${Date.now()}`,
+        mode,
+        status,
+        durationMs,
+        nodeRuns: nodeResults,
+        startedAt: new Date(startedAt).toISOString(),
+        finishedAt: new Date().toISOString(),
+      } as Record<string, unknown>),
+    nodeOutputs,
   });
 }
