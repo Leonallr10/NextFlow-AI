@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-const REFRESH_EVENT = "nextflow-dashboard-stats-refresh";
+/** Dispatched after a successful workflow save so client UI can refetch (stats + saved list). */
+export const DASHBOARD_REFRESH_EVENT = "nextflow-dashboard-stats-refresh";
 
 export type DashboardStatsBarProps = {
   initialWorkflowCount: number;
@@ -46,8 +47,8 @@ export function DashboardStatsBar({
         });
     };
 
-    window.addEventListener(REFRESH_EVENT, refresh);
-    return () => window.removeEventListener(REFRESH_EVENT, refresh);
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(DASHBOARD_REFRESH_EVENT, refresh);
   }, []);
 
   if (!hasDatabase) {
@@ -68,6 +69,6 @@ export function DashboardStatsBar({
 /** Call from client after a successful save so the stats bar refetches. */
 export function notifyDashboardStatsRefresh() {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(REFRESH_EVENT));
+    window.dispatchEvent(new Event(DASHBOARD_REFRESH_EVENT));
   }
 }

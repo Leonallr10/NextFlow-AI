@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { FlowEditor } from "@/components/flow-editor";
 import { DashboardStatsBar } from "@/components/dashboard-stats-bar";
 import { DashboardSessionLogger } from "@/components/dashboard-session-logger";
+import { SavedWorkflowsSection } from "@/components/saved-workflows-section";
 import { serverLog } from "@/lib/server-log";
 
 export default async function DashboardPage() {
@@ -34,14 +35,22 @@ export default async function DashboardPage() {
   let workflows: { id: string; name: string; updatedAt: Date }[] = [];
 
   if (process.env.DATABASE_URL) {
-    workflows = await prisma.workflow.findMany({
-      orderBy: { updatedAt: "desc" },
-      take: 50,
-    });
-    workflows = workflows.filter((workflow) => {
-      const maybeOwner = (workflow as unknown as Record<string, unknown>).userId;
-      return !maybeOwner || maybeOwner === userId;
-    });
+    try {
+      workflows = await prisma.workflow.findMany({
+        where: { userId },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      });
+    } catch {
+      const all = await prisma.workflow.findMany({
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+      });
+      workflows = all.filter((workflow) => {
+        const maybeOwner = (workflow as unknown as Record<string, unknown>).userId;
+        return !maybeOwner || maybeOwner === userId;
+      });
+    }
     workflowCount = workflows.length;
     webhookEventCount = await prisma.webhookEvent.count();
   }
@@ -55,8 +64,7 @@ export default async function DashboardPage() {
             <div>
               <h1 className="text-2xl font-semibold">Workflow Dashboard</h1>
               <p className="mt-1 text-sm text-zinc-600">
-                Build and run LLM workflows. Sign in is required; data is stored when{" "}
-                <code className="rounded bg-zinc-100 px-1">DATABASE_URL</code> is set.
+                Build and run LLM workflows.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -72,22 +80,15 @@ export default async function DashboardPage() {
 
         <FlowEditor />
 
-        {process.env.DATABASE_URL && workflows.length > 0 ? (
-          <section className="rounded-xl border border-zinc-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-zinc-800">Saved workflows</h2>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-              {workflows.slice(0, 5).map((workflow) => (
-                <Link
-                  key={workflow.id}
-                  className="rounded-lg border border-zinc-200 p-3 text-sm hover:bg-zinc-50"
-                  href={`/workflows/${workflow.id}`}
-                >
-                  <p className="font-medium">{workflow.name}</p>
-                  <p className="text-xs text-zinc-500">{workflow.updatedAt.toISOString()}</p>
-                </Link>
-              ))}
-            </div>
-          </section>
+        {process.env.DATABASE_URL ? (
+          <SavedWorkflowsSection
+            hasDatabase
+            initialWorkflows={workflows.map((w) => ({
+              id: w.id,
+              name: w.name,
+              updatedAt: w.updatedAt.toISOString(),
+            }))}
+          />
         ) : null}
       </main>
     </div>

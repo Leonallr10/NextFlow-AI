@@ -26,7 +26,6 @@ import { useFlowStore } from "@/lib/flow-store";
 import type { WorkflowInput } from "@/lib/workflow-schema";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/gemini-defaults";
 import { LlmOutputMarkdown } from "@/components/llm-output";
-import { SAMPLE_WORKFLOW_NAME } from "@/lib/sample-workflow";
 import { notifyDashboardStatsRefresh } from "@/components/dashboard-stats-bar";
 
 const nodeTemplates = [
@@ -208,6 +207,8 @@ export function FlowEditor() {
     setSelectedNodeIds,
     updateNodeData,
     loadSampleWorkflow,
+    workflowName,
+    setWorkflowName,
   } = useFlowStore();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node, Edge> | null>(null);
   const [runs, setRuns] = useState<Array<Record<string, unknown>>>([]);
@@ -286,7 +287,7 @@ export function FlowEditor() {
   const totalNodes = useMemo(() => nodes.length, [nodes.length]);
 
   const toWorkflowPayload = (): WorkflowInput => ({
-      name: SAMPLE_WORKFLOW_NAME,
+      name: workflowName.trim(),
       nodes: nodes.map((node) => ({
         id: node.id,
         type: (node.type as WorkflowInput["nodes"][number]["type"]) ?? "text",
@@ -306,6 +307,11 @@ export function FlowEditor() {
   const saveWorkflow = async () => {
     setSaveMessage(null);
     setSaveError(null);
+    const trimmedName = workflowName.trim();
+    if (trimmedName.length < 2) {
+      setSaveError("Enter a project name (at least 2 characters) in the sidebar.");
+      return;
+    }
     const payload = toWorkflowPayload();
     console.log("[NextFlow] Save workflow → POST /api/workflows", {
       name: payload.name,
@@ -339,6 +345,7 @@ export function FlowEditor() {
     }
 
     const persistedToDb = !json.warning;
+    setWorkflowName(trimmedName);
     setSaveMessage(
       persistedToDb
         ? "Workflow saved to your account."
@@ -352,6 +359,10 @@ export function FlowEditor() {
 
   const runWorkflow = async (mode: "full" | "selected" | "single") => {
     setRunError(null);
+    if (workflowName.trim().length < 2) {
+      setRunError("Enter a project name (at least 2 characters) in the sidebar before running.");
+      return;
+    }
     if (mode !== "full" && selectedNodeIds.length === 0) {
       setRunError("Select one or more nodes on the canvas first (Run Selected / Run Single).");
       return;
@@ -484,6 +495,24 @@ export function FlowEditor() {
       <aside className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-900 [color-scheme:light]">
         <h2 className="text-lg font-semibold">NextFlow Nodes</h2>
         <p className="mt-1 text-sm text-zinc-500">Quick access</p>
+
+        <label className="mt-4 block" htmlFor="nextflow-project-name">
+          <span className="text-xs font-medium text-zinc-700">Project name</span>
+          <input
+            id="nextflow-project-name"
+            type="text"
+            value={workflowName}
+            onChange={(event) => setWorkflowName(event.target.value)}
+            className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+            placeholder="e.g. Summer launch campaign"
+            maxLength={120}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+        <p className="mt-2 text-[11px] leading-snug text-zinc-500">
+          Used when you <strong>Save</strong> or <strong>Run</strong>; appears in Saved workflows.
+        </p>
 
         <div className="mt-4 space-y-2">
           {nodeTemplates.map((template) => (

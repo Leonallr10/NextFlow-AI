@@ -2,12 +2,15 @@
 
 import { create } from "zustand";
 import type { Edge, Node } from "@xyflow/react";
-import { cloneSampleGraph } from "@/lib/sample-workflow";
+import { cloneSampleGraph, SAMPLE_WORKFLOW_NAME } from "@/lib/sample-workflow";
 
 type FlowState = {
   nodes: Node[];
   edges: Edge[];
   selectedNodeIds: string[];
+  /** Shown in Save / Run payloads and stored as the workflow `name` in the database. */
+  workflowName: string;
+  setWorkflowName: (name: string) => void;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   setSelectedNodeIds: (nodeIds: string[]) => void;
@@ -26,6 +29,8 @@ export const useFlowStore = create<FlowState>((set) => ({
   nodes: initialGraph.nodes,
   edges: initialGraph.edges,
   selectedNodeIds: [],
+  workflowName: SAMPLE_WORKFLOW_NAME,
+  setWorkflowName: (workflowName) => set({ workflowName }),
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
@@ -49,10 +54,10 @@ export const useFlowStore = create<FlowState>((set) => ({
     })),
   loadSampleWorkflow: () => {
     const { nodes, edges } = cloneSampleGraph();
-    set({ nodes, edges, selectedNodeIds: [] });
+    set({ nodes, edges, selectedNodeIds: [], workflowName: SAMPLE_WORKFLOW_NAME });
   },
   reset: () => {
     const { nodes, edges } = cloneSampleGraph();
-    set({ nodes, edges, selectedNodeIds: [] });
+    set({ nodes, edges, selectedNodeIds: [], workflowName: SAMPLE_WORKFLOW_NAME });
   },
 }));
