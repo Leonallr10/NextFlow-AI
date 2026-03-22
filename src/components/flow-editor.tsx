@@ -47,19 +47,25 @@ type EditorNodeData = {
 function BaseNode({
   id,
   data,
+  selected,
   children,
   className,
 }: {
   id: string;
   data: EditorNodeData;
+  /** Mirrors React Flow selection — violet ring + border when true. */
+  selected?: boolean;
   children?: React.ReactNode;
   /** Extra classes on the card (e.g. wider LLM node). */
   className?: string;
 }) {
   const removeNode = useFlowStore((s) => s.removeNode);
+  const selectionClass = selected
+    ? "border-violet-500 ring-2 ring-violet-400/70 shadow-[0_0_24px_-6px_rgba(139,92,246,0.45)]"
+    : "border-zinc-700 ring-0 ring-transparent";
   return (
     <div
-      className={`min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl ${className ?? ""}`}
+      className={`min-w-[220px] rounded-lg border bg-zinc-900 p-3 text-zinc-100 shadow-xl transition-[border-color,box-shadow,ring-width] duration-150 ease-out ${selectionClass} ${className ?? ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -85,10 +91,10 @@ function BaseNode({
   );
 }
 
-function TextNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
+function TextNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data}>
+    <BaseNode id={id} data={data} selected={selected}>
       <Handle id="output" type="source" position={Position.Right} />
       <textarea
         className="mt-2 w-full rounded bg-zinc-800 p-2 text-xs"
@@ -100,10 +106,16 @@ function TextNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
   );
 }
 
-function UploadNode({ id, data, accept, inputHandleId }: NodeProps<Node<EditorNodeData>> & { accept: string; inputHandleId?: string }) {
+function UploadNode({
+  id,
+  data,
+  selected,
+  accept,
+  inputHandleId,
+}: NodeProps<Node<EditorNodeData>> & { accept: string; inputHandleId?: string }) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data}>
+    <BaseNode id={id} data={data} selected={selected}>
       {inputHandleId ? <Handle id={inputHandleId} type="target" position={Position.Left} /> : null}
       <Handle id="output" type="source" position={Position.Right} />
       <input
@@ -117,10 +129,10 @@ function UploadNode({ id, data, accept, inputHandleId }: NodeProps<Node<EditorNo
   );
 }
 
-function LlmNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
+function LlmNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data} className="min-w-[300px] max-w-[min(100vw,26rem)]">
+    <BaseNode id={id} data={data} selected={selected} className="min-w-[300px] max-w-[min(100vw,26rem)]">
       <Handle id="system_prompt" type="target" position={Position.Left} style={{ top: 30 }} />
       <Handle id="user_message" type="target" position={Position.Left} style={{ top: 58 }} />
       <Handle id="images" type="target" position={Position.Left} style={{ top: 86 }} />
@@ -149,10 +161,10 @@ function LlmNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
   );
 }
 
-function CropNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
+function CropNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data}>
+    <BaseNode id={id} data={data} selected={selected}>
       <Handle id="image_url" type="target" position={Position.Left} />
       <Handle id="output" type="source" position={Position.Right} />
       <div className="mt-2 grid grid-cols-2 gap-1 text-xs">
@@ -169,10 +181,10 @@ function CropNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
   );
 }
 
-function ExtractNode({ id, data }: NodeProps<Node<EditorNodeData>>) {
+function ExtractNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
   return (
-    <BaseNode id={id} data={data}>
+    <BaseNode id={id} data={data} selected={selected}>
       <Handle id="video_url" type="target" position={Position.Left} style={{ top: 36 }} />
       <Handle id="timestamp" type="target" position={Position.Left} style={{ top: 72 }} />
       <Handle id="output" type="source" position={Position.Right} />
@@ -228,11 +240,20 @@ export function FlowEditor() {
   const [importBanner, setImportBanner] = useState<string | null>(null);
 
   const onNodesChange = (changes: NodeChange[]) => {
-    const nextNodes = applyNodeChanges(changes, nodes);
+    // Always read the latest graph from the store so rapid updates (e.g. select + dimensions)
+    // are not applied on a stale `nodes` closure — that drops `selected` and breaks Run Selected.
+    const { nodes: currentNodes, edges: currentEdges } = useFlowStore.getState();
+    const nextNodes = applyNodeChanges(changes, currentNodes);
+    const selectedIds = nextNodes.filter((n) => n.selected).map((n) => n.id);
+    const key = selectedIds.slice().sort().join("\0");
+    if (key !== selectionKeyRef.current) {
+      selectionKeyRef.current = key;
+      setSelectedNodeIds(selectedIds);
+    }
     const ids = new Set(nextNodes.map((n) => n.id));
-    const nextEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+    const nextEdges = currentEdges.filter((e) => ids.has(e.source) && ids.has(e.target));
     setNodes(nextNodes);
-    if (nextEdges.length !== edges.length) {
+    if (nextEdges.length !== currentEdges.length) {
       setEdges(nextEdges);
     }
   };
@@ -500,17 +521,6 @@ export function FlowEditor() {
     addNode(newNode);
   };
 
-  const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
-      const ids = selectedNodes.map((node) => node.id);
-      const key = ids.slice().sort().join("\0");
-      if (key === selectionKeyRef.current) return;
-      selectionKeyRef.current = key;
-      setSelectedNodeIds(ids);
-    },
-    [setSelectedNodeIds],
-  );
-
   return (
     <>
     <div className="grid min-h-[85vh] grid-cols-[280px_1fr_320px] gap-3 text-zinc-900">
@@ -641,7 +651,6 @@ export function FlowEditor() {
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onInit={setFlowInstance}
-          onSelectionChange={onSelectionChange}
           nodeTypes={nodeTypes}
           fitView
         >
