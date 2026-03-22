@@ -55,6 +55,20 @@ Zod validation, Zustand state, and FFmpeg worker commands.
 - Webhook HMAC verification helpers in `src/lib/webhook-security.ts`
 - Webhook event persistence model: `WebhookEvent` in `prisma/schema.prisma`
 
+## Env: 
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+TRANSLOADIT_KEY=
+TRANSLOADIT_SECRET=
+TRIGGER_API_URL=
+TRIGGER_SECRET_KEY=
+TRIGGER_WEBHOOK_SECRET=
+TRANSLOADIT_NOTIFY_URL=
+TRANSLOADIT_WEBHOOK_SECRET=
+GOOGLE_AI_API_KEY=
+LLM_USE_TRIGGER=false
+LLM_TRIGGER_POLL_MS=400
+
 ## Reference documentation used
 
 - [React Flow docs](https://reactflow.dev/docs/introduction/)
