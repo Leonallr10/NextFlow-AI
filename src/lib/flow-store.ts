@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 import type { Edge, Node } from "@xyflow/react";
+import type { WorkflowInput } from "@/lib/workflow-schema";
+import { workflowToReactFlow } from "@/lib/workflow-import";
 import { cloneSampleGraph, SAMPLE_WORKFLOW_NAME } from "@/lib/sample-workflow";
 
 type FlowState = {
@@ -20,6 +22,8 @@ type FlowState = {
   removeNode: (nodeId: string) => void;
   /** Restores the built-in Product Marketing Kit sample graph (7 nodes, 6 edges). */
   loadSampleWorkflow: () => void;
+  /** Replace canvas from a validated workflow payload (e.g. pasted/uploaded JSON). */
+  loadFromWorkflowInput: (workflow: WorkflowInput) => void;
   reset: () => void;
 };
 
@@ -55,6 +59,15 @@ export const useFlowStore = create<FlowState>((set) => ({
   loadSampleWorkflow: () => {
     const { nodes, edges } = cloneSampleGraph();
     set({ nodes, edges, selectedNodeIds: [], workflowName: SAMPLE_WORKFLOW_NAME });
+  },
+  loadFromWorkflowInput: (workflow: WorkflowInput) => {
+    const { nodes, edges } = workflowToReactFlow(workflow);
+    set({
+      nodes,
+      edges,
+      selectedNodeIds: [],
+      workflowName: workflow.name,
+    });
   },
   reset: () => {
     const { nodes, edges } = cloneSampleGraph();

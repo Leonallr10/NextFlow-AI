@@ -1,0 +1,52 @@
+{
+  "name": "Mini chat (text only)",
+  "nodes": [
+    {
+      "id": "sys-1",
+      "type": "text",
+      "label": "System",
+      "position": { "x": 80, "y": 120 },
+      "data": {
+        "label": "System",
+        "text": "You reply in one short sentence."
+      }
+    },
+    {
+      "id": "user-1",
+      "type": "text",
+      "label": "User",
+      "position": { "x": 80, "y": 280 },
+      "data": {
+        "label": "User",
+        "text": "What is 2+2?"
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "label": "LLM",
+      "position": { "x": 420, "y": 200 },
+      "data": {
+        "label": "LLM",
+        "model": "gemini-2.5-flash",
+        "output": ""
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-sys",
+      "source": "sys-1",
+      "target": "llm-1",
+      "sourceHandle": "output",
+      "targetHandle": "system_prompt"
+    },
+    {
+      "id": "e-user",
+      "source": "user-1",
+      "target": "llm-1",
+      "sourceHandle": "output",
+      "targetHandle": "user_message"
+    }
+  ]
+}

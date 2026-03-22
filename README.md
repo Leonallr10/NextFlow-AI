@@ -17,6 +17,8 @@ Zod validation, Zustand state, and FFmpeg worker commands.
 
 - **In the UI:** open the dashboard editor and click **Load sample workflow (7 nodes)** to restore the *Product Marketing Kit Generator* graph (all six node types + connections).
 - **JSON / API:** see `examples/sample-workflow.json` — use as the body for `POST /api/workflows` or as `workflow` inside `POST /api/workflows/run`. The same shape is built in code via `getSampleWorkflowPayload()` in `src/lib/sample-workflow.ts`.
+- **Import on dashboard:** click **Import workflow JSON…** in the left sidebar — modal with paste / **Upload .json**, **Validate only**, and **Import to canvas** (`src/lib/workflow-import.ts`: JSON → structure → Zod schema → edge/node id checks).
+- **Quick import test files:** `examples/sample-mini-chat.json` (3 nodes: system + user text → LLM) and `examples/sample-image-caption.json` (image URL + prompt → LLM vision).
 
 ## LLM node (Gemini + Trigger.dev)
 

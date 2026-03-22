@@ -1,0 +1,52 @@
+{
+  "name": "Image caption (vision)",
+  "nodes": [
+    {
+      "id": "img-1",
+      "type": "upload_image",
+      "label": "Image URL",
+      "position": { "x": 60, "y": 160 },
+      "data": {
+        "label": "Image URL",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"
+      }
+    },
+    {
+      "id": "prompt-1",
+      "type": "text",
+      "label": "Prompt",
+      "position": { "x": 60, "y": 320 },
+      "data": {
+        "label": "Prompt",
+        "text": "Describe this image in one sentence."
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "label": "Vision LLM",
+      "position": { "x": 440, "y": 220 },
+      "data": {
+        "label": "Vision LLM",
+        "model": "gemini-2.5-flash",
+        "output": ""
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-img",
+      "source": "img-1",
+      "target": "llm-1",
+      "sourceHandle": "output",
+      "targetHandle": "images"
+    },
+    {
+      "id": "e-prompt",
+      "source": "prompt-1",
+      "target": "llm-1",
+      "sourceHandle": "output",
+      "targetHandle": "user_message"
+    }
+  ]
+}

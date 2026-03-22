@@ -27,6 +27,8 @@ import type { WorkflowInput } from "@/lib/workflow-schema";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/gemini-defaults";
 import { LlmOutputMarkdown } from "@/components/llm-output";
 import { notifyDashboardStatsRefresh } from "@/components/dashboard-stats-bar";
+import { WorkflowImportModal } from "@/components/workflow-import-modal";
+import { suggestedNodeImportCounter } from "@/lib/workflow-import";
 
 const nodeTemplates = [
   { label: "Text Node", type: "text" },
@@ -207,6 +209,7 @@ export function FlowEditor() {
     setSelectedNodeIds,
     updateNodeData,
     loadSampleWorkflow,
+    loadFromWorkflowInput,
     workflowName,
     setWorkflowName,
   } = useFlowStore();
@@ -221,6 +224,8 @@ export function FlowEditor() {
   const nodeCountRef = useRef(0);
   /** Avoid infinite loops: React Flow can fire onSelectionChange every frame with a new array reference. */
   const selectionKeyRef = useRef<string>("");
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importBanner, setImportBanner] = useState<string | null>(null);
 
   const onNodesChange = (changes: NodeChange[]) => {
     const nextNodes = applyNodeChanges(changes, nodes);
@@ -285,6 +290,22 @@ export function FlowEditor() {
   };
 
   const totalNodes = useMemo(() => nodes.length, [nodes.length]);
+
+  const handleWorkflowImported = useCallback(
+    (workflow: WorkflowInput) => {
+      loadFromWorkflowInput(workflow);
+      const nextNodes = useFlowStore.getState().nodes;
+      nodeCountRef.current = Math.max(nodeCountRef.current, suggestedNodeImportCounter(nextNodes));
+      setImportBanner(
+        `Imported "${workflow.name}" (${workflow.nodes.length} nodes, ${workflow.edges.length} edges).`,
+      );
+      window.setTimeout(() => setImportBanner(null), 8000);
+      window.requestAnimationFrame(() => {
+        flowInstance?.fitView({ padding: 0.2 });
+      });
+    },
+    [loadFromWorkflowInput, flowInstance],
+  );
 
   const toWorkflowPayload = (): WorkflowInput => ({
       name: workflowName.trim(),
@@ -491,6 +512,7 @@ export function FlowEditor() {
   );
 
   return (
+    <>
     <div className="grid min-h-[85vh] grid-cols-[280px_1fr_320px] gap-3 text-zinc-900">
       <aside className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-900 [color-scheme:light]">
         <h2 className="text-lg font-semibold">NextFlow Nodes</h2>
@@ -513,6 +535,19 @@ export function FlowEditor() {
         <p className="mt-2 text-[11px] leading-snug text-zinc-500">
           Used when you <strong>Save</strong> or <strong>Run</strong>; appears in Saved workflows.
         </p>
+
+        <button
+          type="button"
+          onClick={() => setImportModalOpen(true)}
+          className="mt-4 w-full rounded-lg border border-violet-300 bg-violet-50 px-3 py-2.5 text-sm font-medium text-violet-900 shadow-sm transition hover:bg-violet-100"
+        >
+          Import workflow JSON…
+        </button>
+        {importBanner ? (
+          <p className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-900" role="status">
+            {importBanner}
+          </p>
+        ) : null}
 
         <div className="mt-4 space-y-2">
           {nodeTemplates.map((template) => (
@@ -633,5 +668,11 @@ export function FlowEditor() {
         </div>
       </aside>
     </div>
+    <WorkflowImportModal
+      open={importModalOpen}
+      onClose={() => setImportModalOpen(false)}
+      onImported={handleWorkflowImported}
+    />
+    </>
   );
 }
