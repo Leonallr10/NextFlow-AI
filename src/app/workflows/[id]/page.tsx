@@ -15,7 +15,7 @@ export default async function WorkflowDetailsPage({ params }: PageProps) {
     return (
       <div className="min-h-full bg-zinc-100 p-6 font-sans [color-scheme:light]">
         <div className="mx-auto max-w-4xl rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-zinc-900">Unauthorized</h1>
+          <h1 className="text-2xl font-bold text-zinc-900">Unauthorized</h1>
           <Link href="/sign-in" className="mt-3 inline-block text-sm font-medium text-violet-700 hover:text-violet-900">
             Sign in
           </Link>
@@ -28,7 +28,7 @@ export default async function WorkflowDetailsPage({ params }: PageProps) {
     return (
       <div className="min-h-full bg-zinc-100 p-6 font-sans [color-scheme:light]">
         <div className="mx-auto max-w-4xl rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold text-zinc-900">Workflow details</h1>
+          <h1 className="text-2xl font-bold text-zinc-900">Workflow details</h1>
           <p className="mt-2 text-sm text-zinc-600">
             Set DATABASE_URL to enable persisted workflow details.
           </p>

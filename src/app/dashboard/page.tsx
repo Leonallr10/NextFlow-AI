@@ -62,7 +62,7 @@ export default async function DashboardPage() {
         <header className="rounded-xl border border-zinc-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold">Workflow Dashboard</h1>
+              <h1 className="text-2xl font-bold text-zinc-900">Workflow Dashboard</h1>
               <p className="mt-1 text-sm text-zinc-600">
                 Build and run LLM workflows.
               </p>

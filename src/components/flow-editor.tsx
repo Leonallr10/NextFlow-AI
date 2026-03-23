@@ -639,7 +639,7 @@ export function FlowEditor() {
       </aside>
 
       <section
-        className="h-[85vh] overflow-hidden rounded-xl border border-zinc-200 bg-white"
+        className="h-[100vh] overflow-hidden rounded-xl border border-zinc-200 bg-white"
         onDragOver={onDragOverCanvas}
         onDrop={onDropCanvas}
       >

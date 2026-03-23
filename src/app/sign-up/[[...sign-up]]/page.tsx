@@ -4,29 +4,26 @@ import { AuthPageLogger } from "@/components/auth-page-logger";
 
 export default function SignUpPage() {
   return (
-    <div className="min-h-screen bg-zinc-100 p-4 md:p-8">
+    <div className="min-h-screen bg-zinc-100 p-4 md:p-8 flex items-center justify-center">
       <AuthPageLogger page="sign-up" />
       <div className="mx-auto grid w-full max-w-6xl gap-6 rounded-2xl border border-zinc-200 bg-white p-4 md:grid-cols-2 md:p-8">
-        <section className="rounded-xl bg-white p-4 md:p-6">
-          <div className="mb-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">NextFlow</p>
-            <h1 className="mt-2 text-3xl font-semibold text-zinc-900">Create your account</h1>
-            <p className="mt-2 text-sm text-zinc-600">
-              Start building node-based AI workflows with secure auth, background jobs, and media processing.
-            </p>
-          </div>
-          <SignUp forceRedirectUrl="/dashboard" fallbackRedirectUrl="/dashboard" signInUrl="/sign-in" />
-        </section>
-        <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-6">
-          <h2 className="text-lg font-semibold">What you get</h2>
-          <div className="mt-4 space-y-3 text-sm text-zinc-700">
-            <p>- Dashboard with workflow history and quick actions</p>
-            <p>- API endpoints for save, run, and webhook ingestion</p>
-            <p>- Verified webhook pipeline for Trigger.dev and Transloadit</p>
-          </div>
-          <Link className="mt-5 inline-block text-sm text-zinc-700 underline" href="/sign-in">
+        <section className="rounded-xl bg-zinc-900 p-6 text-zinc-100 md:p-8">
+          <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">NextFlow</p>
+          <h1 className="mt-3 text-3xl font-bold text-zinc-100">Create your workspace account</h1>
+          <p className="mt-3 text-sm text-zinc-300">
+            Start building AI workflows with visual nodes, run history, and media automation in one place.
+          </p>
+          <ul className="mt-6 space-y-2 text-sm text-zinc-300">
+            <li>- Visual node editor with autosave-ready graph state</li>
+            <li>- Trigger.dev run queue and execution tracking</li>
+            <li>- Transloadit + FFmpeg media processing workflow</li>
+          </ul>
+          <Link className="mt-6 inline-block text-sm text-zinc-200 underline" href="/sign-in">
             Already have an account? Sign in
           </Link>
+        </section>
+        <section className="flex items-center justify-center rounded-xl bg-zinc-50 p-4">
+          <SignUp forceRedirectUrl="/dashboard" fallbackRedirectUrl="/dashboard" signInUrl="/sign-in" />
         </section>
       </div>
     </div>
