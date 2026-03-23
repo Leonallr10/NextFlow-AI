@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   addEdge,
   applyEdgeChanges,
@@ -131,6 +132,27 @@ function UploadNode({
 
 function LlmNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
   const { updateNodeData } = useFlowStore();
+  const [isOutputOpen, setIsOutputOpen] = useState(false);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const outputText = String(data.output ?? "");
+
+  const copyOutput = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const value = outputText.trim();
+    if (!value) {
+      setCopyMessage("Nothing to copy");
+      window.setTimeout(() => setCopyMessage(null), 1200);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage("Copied");
+    } catch {
+      setCopyMessage("Copy failed");
+    }
+    window.setTimeout(() => setCopyMessage(null), 1200);
+  };
+
   return (
     <BaseNode id={id} data={data} selected={selected} className="min-w-[300px] max-w-[min(100vw,26rem)]">
       <Handle id="system_prompt" type="target" position={Position.Left} style={{ top: 30 }} />
@@ -150,13 +172,56 @@ function LlmNode({ id, data, selected }: NodeProps<Node<EditorNodeData>>) {
         />
       </label>
       <div className="mt-3 text-left">
-        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-          Output
-        </span>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">Output</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded border border-zinc-600 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-200 hover:border-violet-500 hover:text-violet-200"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsOutputOpen(true);
+              }}
+            >
+              View
+            </button>
+            <button
+              type="button"
+              className="rounded border border-zinc-600 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-200 hover:border-violet-500 hover:text-violet-200"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={copyOutput}
+            >
+              {copyMessage ?? "Copy"}
+            </button>
+          </div>
+        </div>
         <div className="max-h-72 min-h-[3rem] overflow-x-auto overflow-y-auto rounded-md border border-zinc-600 bg-zinc-950/90 px-3 py-2.5 shadow-inner">
-          <LlmOutputMarkdown text={String(data.output ?? "")} />
+          <LlmOutputMarkdown text={outputText} />
         </div>
       </div>
+      {isOutputOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+              <div className="w-full max-w-2xl rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-zinc-700 px-4 py-3">
+                  <p className="text-sm font-semibold">LLM Output</p>
+                  <button
+                    type="button"
+                    className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 hover:border-red-500 hover:text-red-200"
+                    onClick={() => setIsOutputOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
+                  <LlmOutputMarkdown text={outputText} placeholder="No output yet. Run the workflow to generate output." />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </BaseNode>
   );
 }
